@@ -1,46 +1,32 @@
 #!/bin/bash
-# Vortex Engine - Automated Concurrency Benchmark
+# Load-tests a running Vortex server with ApacheBench (ab).
+#
+# Usage: scripts/benchmark.sh [url] [requests] [concurrency] [extra ab flags...]
+#   scripts/benchmark.sh                                    # 50k requests, 1000 concurrent, new connection each
+#   scripts/benchmark.sh http://127.0.0.1:8080/ 50000 1000 -k   # same, with keep-alive
+set -euo pipefail
 
-# Exit immediately if a command exits with a non-zero status
-set -e
+URL=${1:-http://127.0.0.1:8080/}
+REQUESTS=${2:-50000}
+CONCURRENCY=${3:-1000}
+shift $(( $# < 3 ? $# : 3 ))
+EXTRA_FLAGS=("$@")
 
-PORT=8080
-URL="http://127.0.0.1:$PORT/"
-
-echo "=========================================="
-echo "       VORTEX ENGINE: LOAD TESTER         "
-echo "=========================================="
-
-# Check if ApacheBench is installed
 if ! command -v ab &> /dev/null; then
-    echo "[ERROR] ApacheBench (ab) could not be found."
-    echo "Please install it using: sudo apt-get install apache2-utils"
+    echo "ApacheBench (ab) not found. Install it with: sudo apt-get install apache2-utils" >&2
     exit 1
 fi
 
-echo "[INFO] Target Engine: $URL"
-echo "[INFO] Verifying server status..."
-
-# Quick curl to ensure the server is actually running
-if ! curl -s --head  --request GET $URL | grep "200 OK" > /dev/null; then
-   echo "[ERROR] Server is not responding on port $PORT."
-   echo "Make sure you are running ./build/vortex_server in another terminal."
-   exit 1
+if ! curl -fsS -o /dev/null "$URL"; then
+    echo "No 200 response from $URL. Start the server first, e.g. ./build/vortex_server" >&2
+    exit 1
 fi
 
-echo "[INFO] Server is online. Initiating warm-up phase..."
-# Send 5,000 requests to prime the OS file cache and socket buffers
-ab -n 5000 -c 100 -q $URL > /dev/null 2>&1
-echo "[INFO] Warm-up complete. Page cache primed."
+# ab needs one descriptor per concurrent connection.
+ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
 
-echo ""
-echo "[INFO] Commencing Maximum Throughput Test..."
-echo "[INFO] Payload: 50,000 Requests | 1,000 Concurrent Connections"
-echo "------------------------------------------"
+echo "Warming up (5,000 requests)..."
+ab -q -n 5000 -c 100 "${EXTRA_FLAGS[@]}" "$URL" > /dev/null
 
-# The real crucible: 50k requests, 1k concurrency
-ab -n 50000 -c 1000 $URL
-
-echo "------------------------------------------"
-echo "[INFO] Stress test concluded."
-echo "=========================================="
+echo "Running: ab -n $REQUESTS -c $CONCURRENCY ${EXTRA_FLAGS[*]} $URL"
+ab -n "$REQUESTS" -c "$CONCURRENCY" "${EXTRA_FLAGS[@]}" "$URL"

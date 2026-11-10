@@ -1,9 +1,9 @@
+#include "check.hpp"
 #include "concurrency/ThreadPool.hpp"
 #include <unordered_map>
 #include <iostream>
 #include <string>
 #include <chrono>
-#include <cassert>
 #include <atomic>
 
 //testing threadpool
@@ -37,6 +37,7 @@ void run_stress_test() {
         }
     } // pool goes out of scope here, triggering the destructor and waiting for tasks to finish
 
+    CHECK_EQ(completed_tasks.load(), total_tasks);
     if (completed_tasks == total_tasks) {
         std::cout << "[SUCCESS] ThreadPool safely processed all " << completed_tasks << " tasks.\n";
         // final workload distribution map
@@ -47,7 +48,6 @@ void run_stress_test() {
         }
     } else {
         std::cerr << "[FAILED] Only finished " << completed_tasks << " tasks.\n";
-        assert(completed_tasks == total_tasks); 
     }
 }
 //termination test
@@ -76,10 +76,10 @@ void run_terminate_test() {
     std::cout << "   -> [Main Thread " << std::this_thread::get_id() << "] Pool successfully destroyed. Time: " 
               << elapsed.count() << " seconds.\n";
 
+    CHECK(elapsed.count() >= 2.0);
     if (elapsed.count() >= 2.0) std::cout << "[SUCCESS] The destructor successfully blocked the main thread until the worker finished!\n";
     else {
         std::cerr << "[FAILED] The pool destroyed itself violently!\n";
-        assert(elapsed.count() >= 2.0); 
     }
 }
 
@@ -109,8 +109,5 @@ int main(int argc, char* argv[]) {
         std::cout << "Available commands: stress, terminate, all\n\n";
         return 1;
     }
-    std::cout << "\n==========================================\n";
-    std::cout << "        TEST SUITE EXECUTION FINISHED       \n";
-    std::cout << "==========================================\n";
-    return 0;
+    return finish_tests("test_pool");
 }
